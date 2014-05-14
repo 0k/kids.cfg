@@ -1,0 +1,5 @@
+NAME="kids.cfg"
+DESCRIPTION="Kids config loading helpers."
+EMAIL="valentin.lab@kalysto.org"
+AUTHOR="Valentin Lab"
+AUTHOR_EMAIL="$AUTHOR <$EMAIL>"
