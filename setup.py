@@ -56,6 +56,12 @@ if "%%short-version%%".startswith("%%"):
 
 setup(
     setup_requires=['d2to1'],
-    extras_require={'test': ['nose', ]},
+    extras_require={
+        'test': [
+            'nose',
+            'pyyaml',
+            'configobj',
+            'kids.file>=0.0.4',
+            ]},
     d2to1=True
 )
