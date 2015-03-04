@@ -561,7 +561,7 @@ def find_files(research_structure, raise_on_all_missing=True):
 
     The struct is a list of 3-uples:
 
-       [(enforce_file_existence, should_cascade, get_filename),
+       [(enforce_file_existence, cascaded, get_filename),
         ...]
 
     ``get_filename``
@@ -581,11 +581,14 @@ def find_files(research_structure, raise_on_all_missing=True):
 
     ``cascaded``
 
-        is a boolean, if True, then the following 3-uple will be considered
-        and may be added to the final returned files. If False, and the
-        current ``get_filename`` returned and file and this file exist, then
-        this file is considered as the final file, and will be trigger the
-        return of the function.
+        is a Truthable, if equivalent to True, then the following
+        3-uple will be considered and may be added to the final
+        returned files. If False, and the current ``get_filename``
+        returned and file and this file exist, then this file is
+        considered as the final file, and will be trigger the return
+        of the function. The ``cascaded`` value itself will be
+        returned with the filename.
+
 
     Usage
     =====
@@ -608,7 +611,7 @@ def find_files(research_structure, raise_on_all_missing=True):
 
         >>> find_files([(False, False, lambda: 'foo.rc'),
         ...             (False, False, lambda: '.foo.rc')])
-        ['foo.rc']
+        [(False, 'foo.rc')]
 
     As the second value (the ``cascaded`` value) is always false, only
     one result can be outputed in the returned list. It'll be the
@@ -618,7 +621,7 @@ def find_files(research_structure, raise_on_all_missing=True):
 
         >>> find_files([(False, False, lambda: 'bar.rc'),
         ...             (False, False, lambda: '.foo.rc')])
-        ['.foo.rc']
+        [(False, '.foo.rc')]
 
     If none are existing::
 
@@ -641,9 +644,9 @@ def find_files(research_structure, raise_on_all_missing=True):
     In this case, both exists and the cascaded value for the first one is
     True, so both are returned::
 
-        >>> find_files([(False, True, lambda: 'foo.rc'),
+        >>> find_files([(False, 'local', lambda: 'foo.rc'),
         ...             (False, False, lambda: '.foo.rc')])
-        ['foo.rc', '.foo.rc']
+        [('local', 'foo.rc'), (False, '.foo.rc')]
 
     Enforce file existence
     ----------------------
@@ -661,14 +664,14 @@ def find_files(research_structure, raise_on_all_missing=True):
 
         >>> find_files([(False, True, lambda: 'bar.rc'),
         ...             (True, False, lambda: '.foo.rc')])
-        ['.foo.rc']
+        [(False, '.foo.rc')]
 
     And in this special case the 3rd value callable will return None,
     and this won't trigger any exception, even if enforcing is set::
 
         >>> find_files([(True, True, lambda: None),
         ...             (True, False, lambda: '.foo.rc')])
-        ['.foo.rc']
+        [(False, '.foo.rc')]
 
         >>> kf.rm(tmpdir, recursive=True, force=True)
 
@@ -686,8 +689,8 @@ def find_files(research_structure, raise_on_all_missing=True):
                     paths_searched.append(candidate)
                     continue  ## filename valued, but file does not exists
             else:
-                filenames.append(candidate)
-                if not cascaded:
+                filenames.append((cascaded, candidate))
+                if cascaded is False:
                     break
     if not filenames and raise_on_all_missing:
         raise ValueError("No config file was found in those paths: %s."
@@ -807,4 +810,4 @@ def find_file(research_structure, raise_on_all_missing=True):
         raise_on_all_missing=raise_on_all_missing)
     if not filenames:
         return None
-    return filenames[0]
+    return filenames[0][1]
