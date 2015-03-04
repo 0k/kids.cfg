@@ -46,6 +46,23 @@ def mkCustomCfg(name, load, save):
 ## PyCfg
 
 class PyCfg(Cfg):
+    """Python file config parser
+
+        >>> import kids.file as kf
+        >>> from pprint import pprint as pp
+
+        >>> cfgfile = kf.mk_tmp_file("x = 1 ; b = 2; c = lambda: max(x, b)")
+
+        >>> cfg = PyCfg(cfgfile)
+        >>> pp(cfg._cfg)
+        {'b': 2, 'c': <function <lambda> at ...>, 'x': 1}
+
+    Checking that callable are still callable::
+
+        >>> cfg._cfg['c']()
+        2
+
+    """
 
     def __init__(self, filename, config=None):
         super(PyCfg, self).__init__(filename)
@@ -65,8 +82,11 @@ class PyCfg(Cfg):
                 'Syntax error in config file: %s\n'
                 'Line %i offset %i\n' % (self._filename, e.lineno, e.offset))
 
-        del cfg['__builtins__']
-        return cfg
+        ## XXXvlab: if we remove this, any closure will fail :(
+        #del cfg['__builtins__']
+        ## Prefering to copy dict without ``__builtins__``
+        return dict((k, v) for k, v in cfg.items()
+                    if k != "__builtins__")
 
 
 ## ConfigObjCfg
