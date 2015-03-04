@@ -466,16 +466,17 @@ class Config(dct.AttrDictAbstract):
 
     """
 
-    def __init__(self, config=None, prefix=None, cfg=None):
+    def __init__(self, config=None, prefix=None, cfg=None, label=None):
         self._prefix = prefix if prefix else []
         self._cfg_manager = config if isinstance(config, Cfg) \
                             else choose_cfg_manager(config)
         self._provided_cfg = cfg
+        self.__label__ = label
 
     @cache
     @property
     def _cfg(self):
-        if self._provided_cfg:
+        if self._provided_cfg is not None:
             return self._provided_cfg
         ## this can be overridden at ``init()`` time, by providing a ``cfg``.
         return self._cfg_manager._cfg
@@ -487,6 +488,7 @@ class Config(dct.AttrDictAbstract):
                 self._cfg_manager,
                 prefix=self._prefix + [label],
                 cfg=res,
+                label=self.__label__)
         return res
 
     def __iter__(self):
@@ -510,9 +512,75 @@ class Config(dct.AttrDictAbstract):
                if self._prefix else ""))
 
 
-def load_files(filenames, config_factory=Config):
-    """Loads data from a config file."""
-    return dct.MultiDictReader([config_factory(f) for f in filenames])
+class MConfig(dct.MultiDictReader):
+    """Manage multiple cascaded configs
+
+
+        >>> import kids.file as kf
+
+    Here are 2 files::
+
+        >>> cfgfile1 = kf.mk_tmp_file('''
+        ... a:
+        ...     b: 1
+        ... x: 2''')
+        >>> cfgfile2 = kf.mk_tmp_file("x = 1 ; b = {'foo': x + 2}")
+
+    Declaring our multiple config file::
+
+        >>> cfg = MConfig.load([('local', cfgfile1), ('global', cfgfile2)])
+
+    The value of ``x`` is the first found::
+
+        >>> cfg.x
+        2
+
+    And we can't write on it::
+
+        >>> cfg['a']['b'] = 3
+        Traceback (most recent call last):
+        ...
+        TypeError: 'MConfig' object does not support item assignment
+
+        >>> cfg.__local__['a']['b'] = 3
+        >>> print(kf.get_contents(cfgfile1).strip())
+        a:
+          b: 3
+        x: 2
+
+    But we should be carefull at some point::
+
+        >>> cfg.__global__['a']['b'] = 3
+        Traceback (most recent call last):
+        ...
+        KeyError: 'a'
+
+    We'll probably want to::
+
+        >>> cfg.__global__['x'] = 3
+        Traceback (most recent call last):
+        ...
+        NotImplementedError
+
+    Which reminds us that python config file do not support writing.
+
+        >>> kf.rm(cfgfile1)
+        >>> kf.rm(cfgfile2)
+
+
+    """
+
+    def __getattr__(self, label):
+        if label.startswith("__"):
+            for d in self._dcts:
+                if "__%s__" % d.__label__ == label:
+                    return d
+        return super(MConfig, self).__getattr__(label)
+
+    @classmethod
+    def load(cls, filenames, config_factory=Config):
+        """Loads data from a config file."""
+        return cls([config_factory(f, label=label) for label, f in filenames])
 
 
 Null = object()
@@ -538,16 +606,16 @@ def load(basename=None, default=Null, config_file=None, local_path=None,
         ]
         if local_path:
             config_struct.append(
-                (False, True, lambda: os.path.expanduser('~/.%s.rc' % b)))
+                (False, "local", lambda: os.path.join(local_path,
+                                                   '.%s.rc' % basename)))
         config_struct.extend([
             ## Standard cascaded paths
-            (False, True, lambda: os.path.expanduser('~/.%s.rc' % basename)),
-            (False, True, lambda: os.path.expanduser('~/.%s.rc' % basename)),
-            (False, True, lambda: '/etc/%s.rc' % basename),
+            (False, "global", lambda: os.path.expanduser('~/.%s.rc' % basename)),
+            (False, "system", lambda: '/etc/%s.rc' % basename),
         ])
 
     filenames = find_files(config_struct, default is Null)
-    return load_files(filenames, config_factory=config_factory) \
+    return MConfig.load(filenames, config_factory=config_factory) \
            if len(filenames) else default
 
 
