@@ -646,6 +646,10 @@ class MConfig(dct.MultiDictReader):
         """Loads data from a config file."""
         return cls([config_factory(f, label=label) for label, f in filenames])
 
+    def __repr__(self):
+        return ("<%s %r>"
+                % (self.__class__.__name__,
+                   self._dcts))
 
 
 def load(basename=None, raise_on_all_missing=False, config_file=None,
