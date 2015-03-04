@@ -146,7 +146,7 @@ if yaml:
         if kf.chk.is_empty(filename):
             return {}
         with open(filename, 'r') as f:
-            return yaml.load(f)
+            return yaml.safe_load(f)
 
     def saveYaml(filename, content):
         with open(filename, 'w') as f:
