@@ -186,7 +186,7 @@ class Config(dct.AttrDictAbstract):
         ['b', 'x']
 
         >>> sorted(cfg.items())
-        [('b', <Config ... prefix='b')>),
+        [('b', <Config ..., prefix=['b'])>),
          ('x', 1)]
 
         >>> for k in sorted(cfg):
@@ -208,7 +208,7 @@ class Config(dct.AttrDictAbstract):
         >>> cfg['z']
         Traceback (most recent call last):
         ...
-        MissingKeyError: missing key 'z' in dict.
+        KeyError: missing key 'z' in dict.
         >>> cfg.get('z')
 
 
@@ -217,28 +217,9 @@ class Config(dct.AttrDictAbstract):
 
     Access via attribute is working also::
 
-        >>> getattr(cfg, 'b.foo')
-        3
         >>> cfg.b.foo
         3
 
-    mdict interface
-    ---------------
-
-    Allows you to provide the path in one go in the getitem:
-
-        >>> cfg.get('b.foo')
-        3
-        >>> cfg['b.foo']
-        3
-
-    This can reveal itself as useful when accessing directly some
-    values from command line arguments for instance. And it's strong
-    enough to allow you escaping"." with slashes, and slashes with ... slashes:
-    So basically this dotted access allow you to address any part
-    of your file in one go.
-
-        >>> kf.rm(cfgfile)
 
     Config Parsers
     ==============
@@ -340,11 +321,12 @@ class Config(dct.AttrDictAbstract):
         >>> cfg['k']['u'] = 2
         Traceback (most recent call last):
         ...
-        MissingKeyError: missing key 'k' in dict.
+        KeyError:...'k'...
 
     Which seems logical, so you should try::
 
-        >>> cfg['k.u'] = 2
+        >>> mcfg = mdict.mdict(cfg)
+        >>> mcfg['k.u'] = 2
         >>> print(kf.get_contents(cfgfile).strip())
         a:
           b: 1
@@ -410,7 +392,7 @@ class Config(dct.AttrDictAbstract):
         ... x: 2''')
         >>> cfg = Config(YamlCfg(cfgfile))
 
-        >>> cfg['a.c'] = 2
+        >>> mdict.mdict(cfg)['a.c'] = 2
         >>> cfg['a']['b'] = 3
         >>> print(kf.get_contents(cfgfile).strip())
         a:
@@ -498,34 +480,24 @@ class Config(dct.AttrDictAbstract):
         ## this can be overridden at ``init()`` time, by providing a ``cfg``.
         return self._cfg_manager._cfg
 
-    @cache
-    @property
-    def _tprefix(self):
-        return self._mcfg.untokenize(self._prefix)
-
-    @cache
-    @property
-    def _mcfg(self):
-        return mdict.mdict(self._cfg)
-
     def __getitem__(self, label):
-        res = self._mcfg[label]
-        if isinstance(res, mdict.mdict):
+        res = self._cfg[label]
+        if dct.is_dict_like(res):
             return self.__class__(
                 self._cfg_manager,
                 prefix=self._prefix + [label],
-                cfg=res.dct)
+                cfg=res,
         return res
 
     def __iter__(self):
         return self._cfg.__iter__()
 
     def __setitem__(self, label, value):
-        self._mcfg[label] = value
+        self._cfg[label] = value
         self._cfg_manager.save()
 
     def __delitem__(self, label):
-        del self._mcfg[label]
+        del self._cfg[label]
         self._cfg_manager.save()
 
     def __repr__(self, ):
@@ -533,8 +505,8 @@ class Config(dct.AttrDictAbstract):
             "<%s %r (%s values%s)>"
             % (self.__class__.__name__,
                self._cfg_manager._filename,
-               len(self._mcfg.flat),
-               (" prefix=%r" % self._tprefix)
+               len(mdict.mdict(self).flat),
+               (", prefix=%r" % self._prefix)
                if self._prefix else ""))
 
 
