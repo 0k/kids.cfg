@@ -61,7 +61,6 @@ setup(
             'nose',
             'pyyaml',
             'configobj',
-            'kids.file>=0.0.4',
             ]},
     d2to1=True
 )

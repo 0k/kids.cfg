@@ -2,10 +2,13 @@
 
 
 import os
+import os.path
 import sys
 
 from kids.cache import cache
 from kids.data import mdict, dct
+
+import kids.file as kf
 
 
 try:
@@ -42,7 +45,9 @@ def mkCustomCfg(name, load, save):
         @cache
         @property
         def _cfg(self):
-            return load(self._filename)
+            return load(self._filename) \
+                   if os.path.exists(self._filename) else \
+                   {}
 
         def save(self):
             save(self._filename, self._cfg)
@@ -80,6 +85,9 @@ class PyCfg(Cfg):
     @cache
     @property
     def _cfg(self):
+        if not os.path.exists(self._filename):
+            return {}
+
         cfg = {} if self.config is None else self.config.copy()
 
         try:
@@ -135,6 +143,8 @@ except ImportError:
 if yaml:
 
     def loadYaml(filename):
+        if kf.chk.is_empty(filename):
+            return {}
         with open(filename, 'r') as f:
             return yaml.load(f)
 
@@ -151,10 +161,15 @@ else:
             "You can't use YamlLoader since 'yaml' "
             "is not available on your system.")
 
+## most picky config parser first.
+## (note: Yaml parser is not picky at all)
 _GENERIC_CFG = [PyCfg, ConfigObjCfg, YamlCfg]
+_NEW_FILE_FORMAT = YamlCfg
 
 
 def choose_cfg_manager(filename):
+    if not os.path.exists(filename) or kf.chk.is_empty(filename):
+        return _NEW_FILE_FORMAT(filename)
     for cm in _GENERIC_CFG:
         try:
             cm(filename)._cfg
@@ -473,6 +488,33 @@ class Config(dct.AttrDictAbstract):
 
         >>> kf.rm(cfgfile)
 
+
+    No file, or empty file
+    ----------------------
+
+    In case you have no file or an empty file, we use the Yaml parser
+    as default::
+
+        >>> cfgfile = kf.mk_tmp_file('')
+        >>> xx = Config(cfgfile)
+        >>> xx.a = 2
+        >>> print(kf.get_contents(cfgfile).strip())
+        a: 2
+        >>> kf.rm(cfgfile)
+
+    With no existing file, the file gets created only when value are
+    set:
+
+        >>> yy = Config(cfgfile)
+        >>> os.path.exists(cfgfile)
+        False
+        >>> yy.a = 2
+        >>> os.path.exists(cfgfile)
+        True
+        >>> print(kf.get_contents(cfgfile).strip())
+        a: 2
+        >>> kf.rm(cfgfile)
+
     """
 
     def __init__(self, config=None, prefix=None, cfg=None, label=None):
@@ -613,9 +655,7 @@ def load(basename=None, raise_on_all_missing=False, config_file=None,
     if basename is None:
         ## try to infer the basename of the current executable to
         ## get the various places where it could be stored.
-        basename = os.path.basename(sys.argv[0])
-        if basename.endswith(".py"):
-            basename = basename[:-3]
+        basename = kf.basename(sys.argv[0], ".py")
     if config_struct is None:
         config_struct = [
             ## Typically forced config file location via command line:
@@ -634,11 +674,11 @@ def load(basename=None, raise_on_all_missing=False, config_file=None,
             (False, "system", lambda: '/etc/%s.rc' % basename),
         ])
 
-    filenames = find_files(config_struct, raise_on_all_missing)
+    filenames = _find_files(config_struct, raise_on_all_missing)
     return MConfig.load(filenames, config_factory=config_factory)
 
 
-def find_files(research_structure, raise_on_all_missing=True):
+def _find_files(research_structure, raise_on_all_missing=True):
     """Returns list of existing filename matching research_structure specs.
 
     The research structure allows to define a policy to find files in a
@@ -694,9 +734,9 @@ def find_files(research_structure, raise_on_all_missing=True):
     Basic
     -----
 
-    Here's a typical way to use ``find_files``::
+    Here's a typical way to use ``_find_files``::
 
-        >>> find_files([(False, False, lambda: 'foo.rc'),
+        >>> _find_files([(False, False, lambda: 'foo.rc'),
         ...             (False, False, lambda: '.foo.rc')])
         [(False, 'foo.rc')]
 
@@ -706,13 +746,13 @@ def find_files(research_structure, raise_on_all_missing=True):
 
     If the first file didn't exist::
 
-        >>> find_files([(False, False, lambda: 'bar.rc'),
+        >>> _find_files([(False, False, lambda: 'bar.rc'),
         ...             (False, False, lambda: '.foo.rc')])
-        [(False, '.foo.rc')]
+        [(False, 'bar.rc'), (False, '.foo.rc')]
 
     If none are existing::
 
-        >>> find_files([(False, False, lambda: 'bar.rc'),
+        >>> _find_files([(False, False, lambda: 'bar.rc'),
         ...             (False, False, lambda: '.bar.rc')])
         Traceback (most recent call last):
         ...
@@ -720,10 +760,11 @@ def find_files(research_structure, raise_on_all_missing=True):
 
     But you can prevent this by setting ``raise_on_all_missing`` to ``False``::
 
-        >>> find_files([(False, False, lambda: 'bar.rc'),
+        >>> _find_files([(False, False, lambda: 'bar.rc'),
         ...             (False, False, lambda: '.bar.rc')],
         ...            raise_on_all_missing=False)
-        []
+        [(False, 'bar.rc'), (False, '.bar.rc')]
+
 
     Cascaded
     --------
@@ -731,9 +772,10 @@ def find_files(research_structure, raise_on_all_missing=True):
     In this case, both exists and the cascaded value for the first one is
     True, so both are returned::
 
-        >>> find_files([(False, 'local', lambda: 'foo.rc'),
+        >>> _find_files([(False, 'local', lambda: 'foo.rc'),
         ...             (False, False, lambda: '.foo.rc')])
         [('local', 'foo.rc'), (False, '.foo.rc')]
+
 
     Enforce file existence
     ----------------------
@@ -741,7 +783,7 @@ def find_files(research_structure, raise_on_all_missing=True):
     In some case if the 3rd value (the ``get_filename`` callable) returns a
     file path, we want to enforce this file to exist::
 
-        >>> find_files([(True, True, lambda: 'bar.rc'),
+        >>> _find_files([(True, True, lambda: 'bar.rc'),
         ...             (True, False, lambda: '.foo.rc')])
         Traceback (most recent call last):
         ...
@@ -749,37 +791,38 @@ def find_files(research_structure, raise_on_all_missing=True):
 
     In the following we ask to ignore this file if not existing::
 
-        >>> find_files([(False, True, lambda: 'bar.rc'),
+        >>> _find_files([(False, True, lambda: 'bar.rc'),
         ...             (True, False, lambda: '.foo.rc')])
-        [(False, '.foo.rc')]
+        [(True, 'bar.rc'), (False, '.foo.rc')]
 
     And in this special case the 3rd value callable will return None,
     and this won't trigger any exception, even if enforcing is set::
 
-        >>> find_files([(True, True, lambda: None),
+        >>> _find_files([(True, True, lambda: None),
         ...             (True, False, lambda: '.foo.rc')])
         [(False, '.foo.rc')]
 
         >>> kf.rm(tmpdir, recursive=True, force=True)
 
     """
+    found = []
     filenames = []
     paths_searched = []
     ## config file lookup resolution
     for enforce_file_existence, cascaded, fun in research_structure:
         candidate = fun()
-        if candidate:
-            if not os.path.exists(candidate):
-                if enforce_file_existence:
-                    raise ValueError("File %r does not exists." % candidate)
-                else:
-                    paths_searched.append(candidate)
-                    continue  ## filename valued, but file does not exists
-            else:
-                filenames.append((cascaded, candidate))
-                if cascaded is False:
-                    break
-    if not filenames and raise_on_all_missing:
+        if candidate is None:
+            continue
+        paths_searched.append(candidate)
+        filenames.append((cascaded, candidate))
+        if os.path.exists(candidate):
+            found.append(candidate)
+            if cascaded is False:
+                break
+        else:
+            if enforce_file_existence:
+                raise ValueError("File %r does not exists." % candidate)
+    if not found and raise_on_all_missing:
         raise ValueError("No config file was found in those paths: %s."
                          % ', '.join(paths_searched))
     return filenames
@@ -890,11 +933,21 @@ def find_file(research_structure, raise_on_all_missing=True):
         >>> kf.rm(tmpdir, recursive=True, force=True)
 
     """
-
-    filenames = find_files(
-        [(enforce_file_existence, False, fun)
-         for enforce_file_existence, fun in research_structure],
-        raise_on_all_missing=raise_on_all_missing)
-    if not filenames:
-        return None
-    return filenames[0][1]
+    filenames = []
+    paths_searched = []
+    ## config file lookup resolution
+    for enforce_file_existence, fun in research_structure:
+        candidate = fun()
+        if candidate is None:
+            continue
+        if not os.path.exists(candidate):
+            if enforce_file_existence:
+                raise ValueError("File %r does not exists." % candidate)
+            else:
+                paths_searched.append(candidate)
+        else:
+            return candidate
+    if not filenames and raise_on_all_missing:
+        raise ValueError("No config file was found in those paths: %s."
+                         % ', '.join(paths_searched))
+    return
